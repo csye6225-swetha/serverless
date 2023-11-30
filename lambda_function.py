@@ -75,6 +75,13 @@ def download_file(url):
                 f.write(chunk)
     return local_filename
 
+def is_zip_file(filename):
+    """
+    Check if a file is a ZIP file based on its file extension.
+    """
+    return filename.lower().endswith('.zip')
+
+
 def lambda_handler(event, context):
     # Iterate over each record
     for record in event['Records']:
@@ -108,26 +115,43 @@ def lambda_handler(event, context):
 
 
         try:
-            filename = download_file(url)
-            
-            # Upload the downloaded file to GCP Storage
-            blob = bucket.blob(f"{message_id}/{filename}")
-            blob.upload_from_filename(filename)
+                filename = download_file(url)
 
-            gcs_object_url = f"https://storage.googleapis.com/{bucket_name}/{message_id}/{filename}"
-            email_sent = send_email(email, "File Stored Successfully", f"The file {filename} is stored in GCP bucket. URL: {gcs_object_url}")
+                # Check if the file is a ZIP file
+                if is_zip_file(filename):
+                    # Upload the downloaded ZIP file to GCP Storage
+                    blob = bucket.blob(f"{message_id}/{filename}")
+                    blob.upload_from_filename(filename)
 
+                    # If the ZIP file is successfully stored in GCP bucket, send a success email with the GCS object URL
+                    gcs_object_url = f"https://storage.googleapis.com/{bucket_name}/{message_id}/{filename}"
+                    email_sent = send_email(email, "File Stored Successfully", f"The ZIP file {filename} is stored in GCP bucket. URL: {gcs_object_url}")
 
-            if email_sent:
-                    table.update_item(
-                        Key={'MessageId': message_id},
-                        UpdateExpression="SET EmailSent = :sent",
-                        ExpressionAttributeValues={':sent': True}
-                    )
-        except Exception as e:
+                    # Update the 'EmailSent' attribute in DynamoDB based on whether the email was sent
+                    if email_sent:
+                        table.update_item(
+                            Key={'MessageId': message_id},
+                            UpdateExpression="SET EmailSent = :sent",
+                            ExpressionAttributeValues={':sent': True}
+                        )
+                else:
+                    # If the file is not a ZIP file, handle it accordingly
+                    email_sent = send_email(email, "File Type Error", f"The file {filename} is not a ZIP file and was not stored.")
+                    if email_sent:
+                        table.update_item(
+                            Key={'MessageId': message_id},
+                            UpdateExpression="SET EmailSent = :sent",
+                            ExpressionAttributeValues={':sent': True}
+                        )
+            except Exception as e:
                 print(f"Error uploading to GCP Storage: {e}")
                 send_email(email, "File Storage Error", f"Error storing the file {filename} in GCP bucket: {e}")
-       
+                if email_sent:
+                        table.update_item(
+                            Key={'MessageId': message_id},
+                            UpdateExpression="SET EmailSent = :sent",
+                            ExpressionAttributeValues={':sent': True}
+                        )
 
     return "Success"
 
