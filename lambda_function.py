@@ -145,7 +145,7 @@ def lambda_handler(event, context):
                         )
             except Exception as e:
                 print(f"Error uploading to GCP Storage: {e}")
-                send_email(email, "File Storage Error", f"Error storing the file {filename} in GCP bucket: {e}")
+                email_sent = send_email(email, "File Storage Error", f"Error storing the file {filename} in GCP bucket: {e}")
                 if email_sent:
                         table.update_item(
                             Key={'MessageId': message_id},
